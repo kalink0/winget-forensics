@@ -1,0 +1,12 @@
+[
+    {
+        "identifier": "kalink0.Crush",
+        "repo": "kalink0/crush-forensics",
+        "windows_asset_pattern": "crush-windows-v{version}.zip"
+    },
+    {
+        "identifier": "kalink0.Peach",
+        "repo": "kalink0/peach-forensics",
+        "windows_asset_pattern": "peach-windows-v{version}.zip"
+    }
+]

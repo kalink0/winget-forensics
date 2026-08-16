@@ -1,0 +1,80 @@
+name: Winget Bump
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  WINGET_PAT: ${{ secrets.WINGET_PAT }}
+
+jobs:
+  bump:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download wingetcreate
+        run: Invoke-WebRequest -Uri https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+
+      # Sequential, single job/commit by design: packages.json is small and a
+      # matrix would mean N parallel jobs racing to push the same state.json.
+      # A package is skipped (not failed) until its winget-pkgs identifier
+      # exists upstream — see README for the one-time `wingetcreate new`
+      # step that has to happen by hand first.
+      - name: Check for new releases and submit winget updates
+        shell: pwsh
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ env.WINGET_PAT }}
+          GH_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $packages = Get-Content packages.json | ConvertFrom-Json
+          $state = if (Test-Path state.json) {
+            Get-Content state.json | ConvertFrom-Json -AsHashtable
+          } else {
+            @{}
+          }
+          $changed = $false
+          $headers = @{
+            Authorization = "Bearer $env:GH_API_TOKEN"
+            "User-Agent"  = "winget-forensics-bump"
+          }
+
+          foreach ($pkg in $packages) {
+            Write-Host "== $($pkg.identifier) ($($pkg.repo)) =="
+
+            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$($pkg.repo)/releases/latest" -Headers $headers
+            $version = $release.tag_name.TrimStart('v')
+
+            if ($state[$pkg.identifier] -eq $version) {
+              Write-Host "up to date at $version"
+              continue
+            }
+
+            $assetName = $pkg.windows_asset_pattern -replace '\{version\}', $version
+            $url = "https://github.com/$($pkg.repo)/releases/download/$($release.tag_name)/$assetName"
+
+            Write-Host "submitting $version ($url)"
+            .\wingetcreate.exe update $pkg.identifier --version $version --urls $url --submit
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "wingetcreate failed for $($pkg.identifier) -- leaving state untouched, will retry next run"
+              continue
+            }
+
+            $state[$pkg.identifier] = $version
+            $changed = $true
+          }
+
+          if ($changed) {
+            $state | ConvertTo-Json | Set-Content state.json
+            git config user.name "winget-forensics-bot"
+            git config user.email "actions@users.noreply.github.com"
+            git add state.json
+            git commit -m "Record submitted winget versions"
+            git push
+          } else {
+            Write-Host "No state changes."
+          }
