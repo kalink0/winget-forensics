@@ -20,6 +20,19 @@ A package that fails (most commonly: its identifier doesn't exist upstream
 yet) is skipped for that run, not fatal — `state.json` stays unchanged and
 it's retried on the next schedule.
 
+Before any of that, the workflow syncs `kalink0/winget-pkgs` (our fork) with
+upstream master via `gh repo sync`. Our fork only gets touched on actual
+submits, so between infrequent releases it drifts hundreds/thousands of
+commits behind — and both `wingetcreate` and `komac` fail with a misleading
+permissions error (`does not have the correct permissions to execute
+CreateRef`) when trying to branch off a fork that far out of sync, instead of
+syncing it themselves. See
+[microsoft/winget-create#580](https://github.com/microsoft/winget-create/issues/580)
+and [russellbanks/komac#1142](https://github.com/russellbanks/Komac/issues/1142).
+If you ever hit that error running either tool by hand (e.g. the manual
+first-submission step below), sync the fork on GitHub (or `gh repo sync
+kalink0/winget-pkgs -b master`) and retry.
+
 ## Adding a new tool
 
 1. First submission to winget-pkgs has to happen once, by hand, with
