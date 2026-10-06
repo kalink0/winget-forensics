@@ -49,21 +49,6 @@ kalink0/winget-pkgs -b master`) and retry.
 3. Once the identifier exists upstream, the next scheduled run picks it up
    automatically.
 
-## Paused packages
-
-`kalink0.Peach` is temporarily removed from `packages.json` (as of
-2026-08-24) — its initial `winget-pkgs` submission (the manual
-`wingetcreate new` step, see "Adding a new tool" above) is still an open PR
-under Microsoft review, and peach-forensics is about to cut another release
-in the meantime. `wingetcreate update` assumes the identifier already
-exists upstream; running it against a still-pending initial submission
-risks a confusing second PR/branch against the same unmerged identifier
-rather than the documented "skip and retry" behavior for a genuinely
-not-yet-existing package. `state.json` still has `"kalink0.Peach": "0.1.0"`
-untouched — once the initial PR merges, re-add the `packages.json` entry
-above and the next scheduled run picks up from there normally (submitting
-whatever peach release is newest by then, not specifically 0.1.0 again).
-
 ## Secrets
 
 - `WINGET_PAT`: classic GitHub PAT with `public_repo` scope, used by
