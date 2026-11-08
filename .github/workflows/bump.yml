@@ -49,6 +49,7 @@ jobs:
             @{}
           }
           $changed = $false
+          $failed = $false
           $headers = @{
             Authorization = "Bearer $env:GH_API_TOKEN"
             "User-Agent"  = "winget-forensics-bump"
@@ -65,17 +66,47 @@ jobs:
               continue
             }
 
+            # Anyone may submit to winget-pkgs, and other bots do (e.g.
+            # pl4nty's Anthelion submitted kalink0.Crush 0.25.0 before we
+            # did). Submitting a version that is already there fails
+            # wingetcreate; a second PR next to an open one gets closed as a
+            # duplicate. So check upstream first.
+            $id = $pkg.identifier
+            $manifestPath = "manifests/$($id.Substring(0,1).ToLower())/$($id -replace '\.', '/')/$version"
+            $resp = Invoke-WebRequest -SkipHttpErrorCheck -Headers $headers `
+              -Uri "https://api.github.com/repos/microsoft/winget-pkgs/contents/$manifestPath"
+            if ($resp.StatusCode -eq 200) {
+              Write-Host "$id $version is already in winget-pkgs (submitted elsewhere) -- recording it, not submitting"
+              $state[$id] = $version
+              $changed = $true
+              continue
+            }
+            if ($resp.StatusCode -ne 404) {
+              Write-Warning "could not check winget-pkgs for $id $version (HTTP $($resp.StatusCode)) -- will retry next run"
+              $failed = $true
+              continue
+            }
+
+            $q = [uri]::EscapeDataString("repo:microsoft/winget-pkgs is:pr is:open in:title `"$id version $version`"")
+            $search = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/search/issues?q=$q"
+            if ($search.total_count -gt 0) {
+              $pr = $search.items[0].html_url
+              Write-Host "$id $version already has an open PR ($pr) -- not submitting; recorded once it is merged"
+              continue
+            }
+
             $assetName = $pkg.windows_asset_pattern -replace '\{version\}', $version
             $url = "https://github.com/$($pkg.repo)/releases/download/$($release.tag_name)/$assetName"
 
             Write-Host "submitting $version ($url)"
-            .\wingetcreate.exe update $pkg.identifier --version $version --urls $url --submit
+            .\wingetcreate.exe update $id --version $version --urls $url --submit
             if ($LASTEXITCODE -ne 0) {
-              Write-Warning "wingetcreate failed for $($pkg.identifier) -- leaving state untouched, will retry next run"
+              Write-Warning "wingetcreate failed for $id -- leaving state untouched, will retry next run"
+              $failed = $true
               continue
             }
 
-            $state[$pkg.identifier] = $version
+            $state[$id] = $version
             $changed = $true
           }
 
@@ -89,3 +120,9 @@ jobs:
           } else {
             Write-Host "No state changes."
           }
+
+          # Explicit: otherwise the step exits with whatever the last native
+          # command left in $LASTEXITCODE. A real failure (wingetcreate or
+          # the upstream check) still turns the run red, after the other
+          # packages were handled and the state was saved.
+          if ($failed) { exit 1 } else { exit 0 }

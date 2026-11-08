@@ -12,13 +12,21 @@ repo only automates keeping them current.
    source repo, Windows release-asset name pattern).
 2. For each, checks the source repo's latest GitHub release tag against the
    version last recorded in `state.json`.
-3. On a new version, runs `wingetcreate update <identifier> --submit`, which
-   opens a PR against `microsoft/winget-pkgs`, then records the version in
-   `state.json` (committed back) so the next run doesn't resubmit it.
+3. On a new version, first checks `microsoft/winget-pkgs` itself. Anyone may
+   submit there, and other bots do (pl4nty's Anthelion submitted
+   kalink0.Crush 0.25.0 before this one ran):
+   - the version's manifest folder already exists → recorded in
+     `state.json`, nothing submitted;
+   - an open PR for that version already exists → nothing submitted, state
+     unchanged (recorded on a later run, once that PR is merged);
+   - otherwise runs `wingetcreate update <identifier> --submit`, which opens
+     a PR against `microsoft/winget-pkgs`, then records the version in
+     `state.json` (committed back) so the next run doesn't resubmit it.
 
 A package that fails (most commonly: its identifier doesn't exist upstream
-yet) is skipped for that run, not fatal — `state.json` stays unchanged and
-it's retried on the next schedule.
+yet) is skipped for that run — `state.json` stays unchanged and it's retried
+on the next schedule. The other packages are still handled and the state is
+still saved, but the run ends red so the failure is visible.
 
 Before any of that, the workflow syncs `kalink0/winget-pkgs` (our fork) with
 upstream master via `gh repo sync`. Our fork only gets touched on actual
